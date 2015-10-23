@@ -14,6 +14,9 @@ app.removeFromCache = function (url) {
 // XHR
 app.xhr = false;
 app.get = function (url, view, ignoreCache, callback) {
+
+    console.log(url);
+
     // should we ignore get params or not
     var _url = url;
     if (app.params.cacheIgnoreGetParameters && url.indexOf('?') >= 0) {

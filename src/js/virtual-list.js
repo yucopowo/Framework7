@@ -112,7 +112,8 @@ var VirtualList = function (listBlock, params) {
     vl.render = function (force, forceScrollTop) {
         if (force) vl.lastRepaintY = null;
 
-        var scrollTop = -(vl.listBlock[0].getBoundingClientRect().top + vl.pageContent[0].getBoundingClientRect().top);
+        var scrollTop = -(vl.listBlock[0].getBoundingClientRect().top - vl.pageContent[0].getBoundingClientRect().top);
+        
         if (typeof forceScrollTop !== 'undefined') scrollTop = forceScrollTop;
 
         if (vl.lastRepaintY === null || Math.abs(scrollTop - vl.lastRepaintY) > maxBufferHeight || (!updatableScroll && (vl.pageContent[0].scrollTop + pageHeight >= vl.pageContent[0].scrollHeight))) {
@@ -255,6 +256,7 @@ var VirtualList = function (listBlock, params) {
     vl.attachEvents = function (detach) {
         var action = detach ? 'off' : 'on';
         vl.pageContent[action]('scroll', vl.handleScroll);
+        vl.listBlock.parents('.tab').eq(0)[action]('show', vl.handleResize);
         $(window)[action]('resize', vl.handleResize);
     };
 

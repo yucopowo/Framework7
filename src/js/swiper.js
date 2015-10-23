@@ -21,6 +21,7 @@ window.Swiper = function (container, params) {
         freeModeMomentumBounce: true,
         freeModeMomentumBounceRatio: 1,
         freeModeSticky: false,
+        freeModeMinimumVelocity: 0.02,
         // Set wrapper width
         setWrapperSize: false,
         // Virtual Translate
@@ -48,6 +49,8 @@ window.Swiper = function (container, params) {
         // Scrollbar
         scrollbar: null,
         scrollbarHide: true,
+        scrollbarDraggable: false,
+        scrollbarSnapOnRelease: false,
         // Keyboard Mousewheel
         keyboardControl: false,
         mousewheelControl: false,
@@ -193,9 +196,6 @@ window.Swiper = function (container, params) {
     
     // Swiper
     var s = this;
-    
-    // Version
-    s.version = '3.1.0';
     
     // Params
     s.params = params;
@@ -380,7 +380,7 @@ window.Swiper = function (container, params) {
     s.imagesToLoad = [];
     s.imagesLoaded = 0;
     
-    s.loadImage = function (imgElement, src, checkForComplete, callback) {
+    s.loadImage = function (imgElement, src, srcset, checkForComplete, callback) {
         var image;
         function onReady () {
             if (callback) callback();
@@ -390,7 +390,12 @@ window.Swiper = function (container, params) {
                 image = new window.Image();
                 image.onload = onReady;
                 image.onerror = onReady;
-                image.src = src;
+                if (srcset) {
+                    image.srcset = srcset;
+                }
+                if (src) {
+                    image.src = src;
+                }
             } else {
                 onReady();
             }
@@ -410,7 +415,7 @@ window.Swiper = function (container, params) {
             }
         }
         for (var i = 0; i < s.imagesToLoad.length; i++) {
-            s.loadImage(s.imagesToLoad[i], (s.imagesToLoad[i].currentSrc || s.imagesToLoad[i].getAttribute('src')), true, _onReady);
+            s.loadImage(s.imagesToLoad[i], (s.imagesToLoad[i].currentSrc || s.imagesToLoad[i].getAttribute('src')), (s.imagesToLoad[i].srcset || s.imagesToLoad[i].getAttribute('srcset')), true, _onReady);
         }
     };
     
@@ -545,6 +550,9 @@ window.Swiper = function (container, params) {
             else {
                 slidesNumberEvenToRows = Math.ceil(s.slides.length / s.params.slidesPerColumn) * s.params.slidesPerColumn;
             }
+            if (s.params.slidesPerView !== 'auto' && s.params.slidesPerColumnFill === 'row') {
+                slidesNumberEvenToRows = Math.max(slidesNumberEvenToRows, s.params.slidesPerView * s.params.slidesPerColumn);
+            }
         }
     
         // Calc slides
@@ -630,7 +638,6 @@ window.Swiper = function (container, params) {
             index ++;
         }
         s.virtualSize = Math.max(s.virtualSize, s.size) + s.params.slidesOffsetAfter;
-    
         var newSlidesGrid;
     
         if (
@@ -1094,27 +1101,36 @@ window.Swiper = function (container, params) {
         }
         if (s.params.slideToClickedSlide && s.clickedIndex !== undefined && s.clickedIndex !== s.activeIndex) {
             var slideToIndex = s.clickedIndex,
-                realIndex;
+                realIndex,
+                duplicatedSlides;
             if (s.params.loop) {
+                if (s.animating) return;
                 realIndex = $(s.clickedSlide).attr('data-swiper-slide-index');
-                if (slideToIndex > s.slides.length - s.params.slidesPerView) {
-                    s.fixLoop();
-                    slideToIndex = s.wrapper.children('.' + s.params.slideClass + '[data-swiper-slide-index="' + realIndex + '"]').eq(0).index();
-                    setTimeout(function () {
+                if (s.params.centeredSlides) {
+                    if ((slideToIndex < s.loopedSlides - s.params.slidesPerView/2) || (slideToIndex > s.slides.length - s.loopedSlides + s.params.slidesPerView/2)) {
+                        s.fixLoop();
+                        slideToIndex = s.wrapper.children('.' + s.params.slideClass + '[data-swiper-slide-index="' + realIndex + '"]:not(.swiper-slide-duplicate)').eq(0).index();
+                        setTimeout(function () {
+                            s.slideTo(slideToIndex);
+                        }, 0);
+                    }
+                    else {
                         s.slideTo(slideToIndex);
-                    }, 0);
-                }
-                else if (slideToIndex < s.params.slidesPerView - 1) {
-                    s.fixLoop();
-                    var duplicatedSlides = s.wrapper.children('.' + s.params.slideClass + '[data-swiper-slide-index="' + realIndex + '"]');
-                    slideToIndex = duplicatedSlides.eq(duplicatedSlides.length - 1).index();
-                    setTimeout(function () {
-                        s.slideTo(slideToIndex);
-                    }, 0);
+                    }
                 }
                 else {
-                    s.slideTo(slideToIndex);
+                    if (slideToIndex > s.slides.length - s.params.slidesPerView) {
+                        s.fixLoop();
+                        slideToIndex = s.wrapper.children('.' + s.params.slideClass + '[data-swiper-slide-index="' + realIndex + '"]:not(.swiper-slide-duplicate)').eq(0).index();
+                        setTimeout(function () {
+                            s.slideTo(slideToIndex);
+                        }, 0);
+                    }
+                    else {
+                        s.slideTo(slideToIndex);
+                    }
                 }
+                    
             }
             else {
                 s.slideTo(slideToIndex);
@@ -1428,7 +1444,7 @@ window.Swiper = function (container, params) {
                     var time = lastMoveEvent.time - velocityEvent.time;
                     s.velocity = distance / time;
                     s.velocity = s.velocity / 2;
-                    if (Math.abs(s.velocity) < 0.02) {
+                    if (Math.abs(s.velocity) < s.params.freeModeMinimumVelocity) {
                         s.velocity = 0;
                     }
                     // this implies that the user stopped moving a finger then released.
@@ -1756,6 +1772,12 @@ window.Swiper = function (container, params) {
         else {
             y = translate;
         }
+    
+        if (s.params.roundLengths) {
+            x = round(x);
+            y = round(y);
+        }
+    
         if (!s.params.virtualTranslate) {
             if (s.support.transforms3d) s.wrapper.transform('translate3d(' + x + 'px, ' + y + 'px, ' + z + 'px)');
             else s.wrapper.transform('translate(' + x + 'px, ' + y + 'px)');
@@ -1793,9 +1815,15 @@ window.Swiper = function (container, params) {
     
         curStyle = window.getComputedStyle(el, null);
         if (window.WebKitCSSMatrix) {
+            curTransform = curStyle.transform || curStyle.webkitTransform;
+            if (curTransform.split(',').length > 6) {
+                curTransform = curTransform.split(', ').map(function(a){
+                    return a.replace(',','.');
+                }).join(', ');
+            }
             // Some old versions of Webkit choke when 'none' is passed; pass
             // empty string instead in this case
-            transformMatrix = new window.WebKitCSSMatrix(curStyle.webkitTransform === 'none' ? '' : curStyle.webkitTransform);
+            transformMatrix = new window.WebKitCSSMatrix(curTransform === 'none' ? '' : curTransform);
         }
         else {
             transformMatrix = curStyle.MozTransform || curStyle.OTransform || curStyle.MsTransform || curStyle.msTransform  || curStyle.transform || curStyle.getPropertyValue('transform').replace('translate(', 'matrix(1, 0, 0, 1,');
@@ -2245,7 +2273,7 @@ window.Swiper = function (container, params) {
             var slide = s.slides.eq(index);
             var img = slide.find('.swiper-lazy:not(.swiper-lazy-loaded):not(.swiper-lazy-loading)');
             if (slide.hasClass('swiper-lazy') && !slide.hasClass('swiper-lazy-loaded') && !slide.hasClass('swiper-lazy-loading')) {
-                img.add(slide[0]);
+                img = img.add(slide[0]);
             }
             if (img.length === 0) return;
     
@@ -2253,15 +2281,23 @@ window.Swiper = function (container, params) {
                 var _img = $(this);
                 _img.addClass('swiper-lazy-loading');
                 var background = _img.attr('data-background');
-                var src = _img.attr('data-src');
-                s.loadImage(_img[0], (src || background), false, function () {
+                var src = _img.attr('data-src'),
+                    srcset = _img.attr('data-srcset');
+                s.loadImage(_img[0], (src || background), srcset, false, function () {
                     if (background) {
                         _img.css('background-image', 'url(' + background + ')');
                         _img.removeAttr('data-background');
                     }
                     else {
-                        _img.attr('src', src);
-                        _img.removeAttr('data-src');
+                        if (srcset) {
+                            _img.attr('srcset', srcset);
+                            _img.removeAttr('data-srcset');    
+                        }
+                        if (src) {
+                            _img.attr('src', src);    
+                            _img.removeAttr('data-src');
+                        }
+                        
                     }
                         
                     _img.addClass('swiper-lazy-loaded').removeClass('swiper-lazy-loading');
@@ -2340,6 +2376,86 @@ window.Swiper = function (container, params) {
       Scrollbar
       ===========================*/
     s.scrollbar = {
+        isTouched: false,
+        setDragPosition: function (e) {
+            var sb = s.scrollbar;
+            var x = 0, y = 0;
+            var translate;
+            var pointerPosition = isH() ? 
+                ((e.type === 'touchstart' || e.type === 'touchmove') ? e.targetTouches[0].pageX : e.pageX || e.clientX) :
+                ((e.type === 'touchstart' || e.type === 'touchmove') ? e.targetTouches[0].pageY : e.pageY || e.clientY) ;
+            var position = (pointerPosition) - sb.track.offset()[isH() ? 'left' : 'top'] - sb.dragSize / 2;
+            var positionMin = -s.minTranslate() * sb.moveDivider;
+            var positionMax = -s.maxTranslate() * sb.moveDivider;
+            if (position < positionMin) {
+                position = positionMin;
+            }
+            else if (position > positionMax) {
+                position = positionMax;
+            }
+            position = -position / sb.moveDivider;
+            s.updateProgress(position);
+            s.setWrapperTranslate(position, true);
+        },
+        dragStart: function (e) {
+            var sb = s.scrollbar;
+            sb.isTouched = true;
+            e.preventDefault();
+            e.stopPropagation();
+    
+            sb.setDragPosition(e);
+            clearTimeout(sb.dragTimeout);
+    
+            sb.track.transition(0);
+            if (s.params.scrollbarHide) {
+                sb.track.css('opacity', 1);
+            }
+            s.wrapper.transition(100);
+            sb.drag.transition(100);
+            s.emit('onScrollbarDragStart', s);
+        },
+        dragMove: function (e) {
+            var sb = s.scrollbar;
+            if (!sb.isTouched) return;
+            if (e.preventDefault) e.preventDefault();
+            else e.returnValue = false;
+            sb.setDragPosition(e);
+            s.wrapper.transition(0);
+            sb.track.transition(0);
+            sb.drag.transition(0);
+            s.emit('onScrollbarDragMove', s);
+        },
+        dragEnd: function (e) {
+            var sb = s.scrollbar;
+            if (!sb.isTouched) return;
+            sb.isTouched = false;
+            if (s.params.scrollbarHide) {
+                clearTimeout(sb.dragTimeout);
+                sb.dragTimeout = setTimeout(function () {
+                    sb.track.css('opacity', 0);
+                    sb.track.transition(400);
+                }, 1000);
+    
+            }
+            s.emit('onScrollbarDragEnd', s);
+            if (s.params.scrollbarSnapOnRelease) {
+                s.slideReset();
+            }
+        },
+        enableDraggable: function () {
+            var sb = s.scrollbar;
+            var target = s.support.touch ? sb.track : document;
+            $(sb.track).on(s.touchEvents.start, sb.dragStart);
+            $(target).on(s.touchEvents.move, sb.dragMove);
+            $(target).on(s.touchEvents.end, sb.dragEnd);
+        },
+        disableDraggable: function () {
+            var sb = s.scrollbar;
+            var target = s.support.touch ? sb.track : document;
+            $(sb.track).off(s.touchEvents.start, sb.dragStart);
+            $(target).off(s.touchEvents.move, sb.dragMove);
+            $(target).off(s.touchEvents.end, sb.dragEnd);
+        },
         set: function () {
             if (!s.params.scrollbar) return;
             var sb = s.scrollbar;
@@ -2797,6 +2913,9 @@ window.Swiper = function (container, params) {
         s.updatePagination();
         if (s.params.scrollbar && s.scrollbar) {
             s.scrollbar.set();
+            if (s.params.scrollbarDraggable) {
+                s.scrollbar.enableDraggable();
+            }
         }
         if (s.params.effect !== 'slide' && s.effects[s.params.effect]) {
             if (!s.params.loop) s.updateProgress();
@@ -2885,6 +3004,12 @@ window.Swiper = function (container, params) {
         s.detachEvents();
         // Stop autoplay
         s.stopAutoplay();
+        // Disable draggable
+        if (s.params.scrollbar && s.scrollbar) {
+            if (s.params.scrollbarDraggable) {
+                s.scrollbar.disableDraggable();
+            }
+        }
         // Destroy loop
         if (s.params.loop) {
             s.destroyLoop();
@@ -2935,7 +3060,7 @@ Swiper.prototype = {
     ====================================================*/
     browser: {
         ie: window.navigator.pointerEnabled || window.navigator.msPointerEnabled,
-        ieTouch: (window.navigator.msPointerEnabled && window.navigator.msMaxTouchPoints > 1) || (window.navigator.pointerEnabled && window.navigator.maxTouchPoints > 1),
+        ieTouch: (window.navigator.msPointerEnabled && window.navigator.msMaxTouchPoints > 1) || (window.navigator.pointerEnabled && window.navigator.maxTouchPoints > 1)
     },
     /*==================================================
     Devices

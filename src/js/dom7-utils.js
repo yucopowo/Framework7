@@ -40,11 +40,12 @@ $.unique = function (arr) {
     }
     return unique;
 };
-$.serializeObject = function (obj, parents) {
+$.serializeObject = $.param = function (obj, parents) {
     if (typeof obj === 'string') return obj;
     var resultArray = [];
     var separator = '&';
     parents = parents || [];
+    var newParents;
     function var_name(name) {
         if (parents.length > 0) {
             var _parents = '';
@@ -67,15 +68,24 @@ $.serializeObject = function (obj, parents) {
             if ($.isArray(obj[prop])) {
                 toPush = [];
                 for (var i = 0; i < obj[prop].length; i ++) {
-                    toPush.push(var_name(prop) + '[]=' + var_value(obj[prop][i]));
+                    if (!$.isArray(obj[prop][i]) && typeof obj[prop][i] === 'object') {
+                        newParents = parents.slice();
+                        newParents.push(prop);
+                        newParents.push(i + '');
+                        toPush.push($.serializeObject(obj[prop][i], newParents));
+                    }
+                    else {
+                        toPush.push(var_name(prop) + '[]=' + var_value(obj[prop][i]));
+                    }
+                    
                 }
                 if (toPush.length > 0) resultArray.push(toPush.join(separator));
             }
             else if (typeof obj[prop] === 'object') {
                 // Object, convert to named array
-                var _newParents = parents.slice();
-                _newParents.push(prop);
-                toPush = $.serializeObject(obj[prop], _newParents);
+                newParents = parents.slice();
+                newParents.push(prop);
+                toPush = $.serializeObject(obj[prop], newParents);
                 if (toPush !== '') resultArray.push(toPush);
             }
             else if (typeof obj[prop] !== 'undefined' && obj[prop] !== '') {
@@ -104,9 +114,15 @@ $.getTranslate = function (el, axis) {
 
     curStyle = window.getComputedStyle(el, null);
     if (window.WebKitCSSMatrix) {
+        curTransform = curStyle.transform || curStyle.webkitTransform;
+        if (curTransform.split(',').length > 6) {
+            curTransform = curTransform.split(', ').map(function(a){
+                return a.replace(',','.');
+            }).join(', ');
+        }
         // Some old versions of Webkit choke when 'none' is passed; pass
         // empty string instead in this case
-        transformMatrix = new WebKitCSSMatrix(curStyle.webkitTransform === 'none' ? '' : curStyle.webkitTransform);
+        transformMatrix = new WebKitCSSMatrix(curTransform === 'none' ? '' : curTransform);
     }
     else {
         transformMatrix = curStyle.MozTransform || curStyle.OTransform || curStyle.MsTransform || curStyle.msTransform  || curStyle.transform || curStyle.getPropertyValue('transform').replace('translate(', 'matrix(1, 0, 0, 1,');
